@@ -1,135 +1,190 @@
 import streamlit as st
-import requests
 import pandas as pd
-
 import random
+import math
 
-def mock_analyze(text):
-    # Fake but realistic scores
-    toxicity_score = min(1.0, max(0.0, len(text) / 200))
-    readability_score = max(10, 100 - len(text) / 3)
-
-    readability_risk = 1 - (readability_score / 100)
-
-    risk_score = (0.6 * toxicity_score + 0.4 * readability_risk) * 100
-
-    if risk_score > 70:
-        level = "HIGH"
-    elif risk_score > 40:
-        level = "MEDIUM"
-    else:
-        level = "LOW"
-
-    return {
-        "risk_score": risk_score,
-        "risk_level": level,
-        "toxicity_score": round(toxicity_score, 2),
-        "readability_score": round(readability_score, 1),
-        "behavior_risk": round(random.uniform(0.3, 0.8), 2),
-        "graph_risk": round(random.uniform(0.2, 0.7), 2),
-        "explanation": f"{level} risk due to combined textual, behavioral, and network signals."
-    }
-
-# ----------------------------
-# Page config
-# ----------------------------
+# =====================================================
+# PAGE CONFIG
+# =====================================================
 st.set_page_config(
     page_title="Fake Account Risk Analyzer",
     layout="centered"
 )
 
 st.title("🚨 Fake Account Risk Analyzer")
-st.caption("Multi-signal risk detection using behavior, graph, and NLP signals")
+st.caption("Behavioral + Textual + Network Risk Scoring")
 
 st.divider()
 
-# ----------------------------
-# Input section
-# ----------------------------
-st.subheader("🔍 Analyze Text Content")
+# =====================================================
+# MOCK BACKEND (REPLACE LATER)
+# =====================================================
+def mock_analyze(text, rf):
+    # --- NLP ---
+    toxicity_score = min(1.0, len(text) / 200)
+    readability_score = max(10, 100 - len(text) / 3)
+    readability_risk = 1 - (readability_score / 100)
 
-user_text = st.text_area(
-    "Enter post / bio / tweet text",
-    height=150,
-    placeholder="Type or paste text here..."
+    # --- Behavioral risk (RF-like heuristic) ---
+    behavior_risk = min(
+        1.0,
+        0.30 * (rf["statuses_per_day"] / 150) +
+        0.25 * (1 / (rf["ff_ratio"] + 0.1)) +
+        0.20 * (1 / (rf["log_followers_count"] + 1)) +
+        0.15 * (1 if not rf["has_profile_pic"] else 0) +
+        0.10 * random.uniform(0.3, 0.7)
+    )
+
+    # --- Graph risk (mocked) ---
+    graph_risk = random.uniform(0.3, 0.7)
+
+    # --- Final fusion ---
+    final_risk = (
+        0.35 * behavior_risk +
+        0.30 * toxicity_score +
+        0.20 * graph_risk +
+        0.15 * readability_risk
+    ) * 100
+
+    if final_risk >= 70:
+        level = "HIGH"
+    elif final_risk >= 40:
+        level = "MEDIUM"
+    else:
+        level = "LOW"
+
+    return {
+        "final_risk_score": round(final_risk, 1),
+        "risk_level": level,
+        "behavior_risk": round(behavior_risk, 2),
+        "graph_risk": round(graph_risk, 2),
+        "toxicity_score": round(toxicity_score, 2),
+        "readability_score": round(readability_score, 1),
+        "explanation": f"{level} risk due to abnormal behavior, toxic language, and network signals."
+    }
+
+# =====================================================
+# INPUTS
+# =====================================================
+
+st.subheader("📝 Text Content")
+
+text_type = st.selectbox(
+    "Select text type",
+    ["Post", "Bio", "Username"]
 )
 
-analyze_btn = st.button("Analyze Risk")
+text_input = st.text_area(
+    f"Enter {text_type.lower()} text",
+    height=120,
+    placeholder=f"Paste {text_type.lower()} here..."
+)
 
-# ----------------------------
-# Backend call
-# ----------------------------
-if analyze_btn and user_text.strip() != "":
-    with st.spinner("Analyzing content..."):
-        result = mock_analyze(user_text)
+st.divider()
+st.subheader("🎛️ Behavioral Features (Random Forest Inputs)")
 
+col1, col2 = st.columns(2)
 
-    # ----------------------------
-    # Final Risk Summary
-    # ----------------------------
-    st.divider()
+with col1:
+    log_followers_count = st.slider(
+        "Log10 Followers Count",
+        0.0, 7.0, 4.0, 0.1,
+        help="log10(followers + 1)"
+    )
+
+    log_friends_count = st.slider(
+        "Log10 Following Count",
+        0.0, 7.0, 4.2, 0.1,
+        help="log10(following + 1)"
+    )
+
+    statuses_per_day = st.slider(
+        "Statuses Per Day",
+        0.0, 150.0, 8.0, 1.0
+    )
+
+with col2:
+    favourites_count = st.slider(
+        "Favourites Count",
+        0, 10000, 300, 50
+    )
+
+    listed_count = st.slider(
+        "Listed Count",
+        0, 500, 15, 5
+    )
+
+    verified = st.checkbox("Verified Account", value=False)
+    has_profile_pic = st.checkbox("Has Profile Picture", value=True)
+
+# =====================================================
+# DERIVED FEATURE (ff_ratio)
+# =====================================================
+followers = math.pow(10, log_followers_count)
+friends = math.pow(10, log_friends_count)
+
+ff_ratio = followers / (friends + 1)
+
+st.metric(
+    "Follower / Following Ratio (Derived)",
+    round(ff_ratio, 3)
+)
+
+rf_features = {
+    "log_followers_count": log_followers_count,
+    "log_friends_count": log_friends_count,
+    "ff_ratio": ff_ratio,
+    "statuses_per_day": statuses_per_day,
+    "favourites_count": favourites_count,
+    "listed_count": listed_count,
+    "verified": int(verified),
+    "has_profile_pic": int(has_profile_pic)
+}
+
+with st.expander("🔍 RF Features Sent to Model"):
+    st.json(rf_features)
+
+st.divider()
+analyze_btn = st.button("🔍 Analyze Risk")
+
+# =====================================================
+# OUTPUT
+# =====================================================
+if analyze_btn:
+    if text_input.strip() == "":
+        st.warning("Please enter some text.")
+        st.stop()
+
+    with st.spinner("Analyzing risk..."):
+        result = mock_analyze(text_input, rf_features)
+
     st.subheader("📊 Final Risk Assessment")
 
-    risk_score = result["risk_score"]
-    risk_level = result["risk_level"]
+    c1, c2 = st.columns(2)
+    c1.metric("Final Risk Score", f"{result['final_risk_score']} / 100")
 
-    col1, col2 = st.columns(2)
-    col1.metric("Final Risk Score", f"{int(risk_score)} / 100")
-
-    if risk_level == "HIGH":
-        col2.error("HIGH RISK 🚨")
-    elif risk_level == "MEDIUM":
-        col2.warning("MEDIUM RISK ⚠️")
+    if result["risk_level"] == "HIGH":
+        c2.error("HIGH RISK 🚨")
+    elif result["risk_level"] == "MEDIUM":
+        c2.warning("MEDIUM RISK ⚠️")
     else:
-        col2.success("LOW RISK ✅")
+        c2.success("LOW RISK ✅")
 
-    # ----------------------------
-    # Risk Breakdown
-    # ----------------------------
     st.divider()
     st.subheader("🧩 Risk Breakdown")
 
-    breakdown = {
-        "Behavior Risk": result.get("behavior_risk", 0),
-        "Graph Risk": result.get("graph_risk", 0),
-        "Text Toxicity": result["toxicity_score"],
-        "Readability Risk": 1 - (result["readability_score"] / 100)
-    }
-
-    df = pd.DataFrame.from_dict(
-        breakdown,
-        orient="index",
-        columns=["Score"]
-    )
+    df = pd.DataFrame({
+        "Signal": ["Behavior", "Text Toxicity", "Graph", "Readability"],
+        "Score": [
+            result["behavior_risk"],
+            result["toxicity_score"],
+            result["graph_risk"],
+            1 - (result["readability_score"] / 100)
+        ]
+    }).set_index("Signal")
 
     st.bar_chart(df)
 
-    # ----------------------------
-    # Detailed Signals
-    # ----------------------------
-    st.subheader("📌 Signal Details")
-
-    st.write(f"**Toxicity Score (BERT):** {result['toxicity_score']:.2f}")
-    st.write(f"**Readability Score (Flesch):** {result['readability_score']:.1f}")
-
-    # ----------------------------
-    # Explanation
-    # ----------------------------
     st.divider()
     st.subheader("🧠 Explanation")
-
     st.info(result["explanation"])
-
-    # ----------------------------
-    # Analyst Actions (Optional)
-    # ----------------------------
-    st.divider()
-    st.subheader("🛠️ Analyst Action")
-
-    colA, colB, colC = st.columns(3)
-    colA.button("✅ Mark Legit")
-    colB.button("🚫 Mark Fake")
-    colC.button("🔍 Needs Review")
-
-elif analyze_btn:
-    st.warning("Please enter some text to analyze.")
