@@ -1,0 +1,11 @@
+fastapi
+uvicorn
+transformers
+torch
+textstat
+scikit-learn
+networkx
+streamlit
+pandas
+numpy
+requests
